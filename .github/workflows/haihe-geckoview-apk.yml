@@ -1,0 +1,347 @@
+name: Build HaiHe GeckoView APKs
+
+on:
+  push:
+    branches:
+      - build/haihe-geckoview-v2-20260812
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
+
+      - name: Resolve latest GeckoView 144 ARMv7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL 'https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview-armeabi-v7a/maven-metadata.xml' -o /tmp/gv.xml
+          GECKO_VERSION=$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root=ET.parse('/tmp/gv.xml').getroot()
+          versions=[x.text for x in root.findall('.//version') if x.text and x.text.startswith('144.0.')]
+          if not versions:
+              raise SystemExit('No GeckoView 144 version found')
+          print(versions[-1])
+          PY
+          )
+          echo "GECKO_VERSION=$GECKO_VERSION" >> "$GITHUB_ENV"
+          echo "Using GeckoView $GECKO_VERSION"
+
+      - name: Generate isolated Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf haihe-gecko-ci
+          mkdir -p haihe-gecko-ci/app/src/main/java/cn/ictsoft/haihe/tvengine
+          mkdir -p haihe-gecko-ci/app/src/main/res/values
+          mkdir -p haihe-gecko-ci/app/src/main/res/drawable
+
+          cat > haihe-gecko-ci/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://maven.mozilla.org/maven2/") }
+              }
+          }
+          rootProject.name = "HaiHeGeckoTV"
+          include ':app'
+          EOF
+
+          cat > haihe-gecko-ci/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.3.2' apply false
+          }
+          EOF
+
+          cat > haihe-gecko-ci/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6144m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > haihe-gecko-ci/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+
+          def geckoVersion = System.getenv('GECKO_VERSION')
+          if (geckoVersion == null || geckoVersion.trim().isEmpty()) {
+              throw new GradleException('GECKO_VERSION is required')
+          }
+
+          android {
+              namespace 'cn.ictsoft.haihe.tvengine'
+              compileSdk 34
+
+              defaultConfig {
+                  minSdk 21
+                  targetSdk 28
+                  versionCode 4
+                  versionName '4.0.0-gecko144'
+              }
+
+              flavorDimensions += 'site'
+              productFlavors {
+                  sum {
+                      dimension 'site'
+                      applicationId 'cn.ictsoft.haihe.sum001'
+                      resValue 'string', 'app_name', '海合汇总'
+                      buildConfigField 'String', 'START_URL', '"https://vivid.saas.ictsoft.cn/dplus/view/1962325859989110785?note=lmy96quxrp&hasPassword=0"'
+                  }
+                  fac1 {
+                      dimension 'site'
+                      applicationId 'cn.ictsoft.haihe.fac001'
+                      resValue 'string', 'app_name', '海合一分厂'
+                      buildConfigField 'String', 'START_URL', '"https://vivid.saas.ictsoft.cn/dplus/view/1966371989769076738?note=53akx72y2z&hasPassword=0"'
+                  }
+                  fac2 {
+                      dimension 'site'
+                      applicationId 'cn.ictsoft.haihe.fac002'
+                      resValue 'string', 'app_name', '海合二分厂'
+                      buildConfigField 'String', 'START_URL', '"https://vivid.saas.ictsoft.cn/dplus/view/1966372037131157505?note=szvajn656v&hasPassword=0"'
+                  }
+                  fac3 {
+                      dimension 'site'
+                      applicationId 'cn.ictsoft.haihe.fac003'
+                      resValue 'string', 'app_name', '海合三分厂'
+                      buildConfigField 'String', 'START_URL', '"https://vivid.saas.ictsoft.cn/dplus/view/1966372021708701697?note=36gl14pdfy&hasPassword=0"'
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+
+              buildFeatures { buildConfig true }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              packaging {
+                  jniLibs { useLegacyPackaging = true }
+                  resources {
+                      excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*']
+                  }
+              }
+          }
+
+          dependencies {
+              implementation "org.mozilla.geckoview:geckoview-armeabi-v7a:${geckoVersion}"
+          }
+          EOF
+
+          cat > haihe-gecko-ci/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+              <application
+                  android:allowBackup="false"
+                  android:banner="@drawable/tv_banner"
+                  android:hardwareAccelerated="true"
+                  android:icon="@drawable/ic_launcher"
+                  android:label="@string/app_name"
+                  android:largeHeap="true"
+                  android:theme="@style/AppTheme">
+                  <activity
+                      android:name="cn.ictsoft.haihe.tvengine.MainActivity"
+                      android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|smallestScreenSize|uiMode"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:screenOrientation="landscape">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > haihe-gecko-ci/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:colorAccent">#00A650</item>
+                  <item name="android:windowBackground">#000000</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > haihe-gecko-ci/app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#00A650" android:pathData="M14,4 L94,4 Q104,4 104,14 L104,94 Q104,104 94,104 L14,104 Q4,104 4,94 L4,14 Q4,4 14,4Z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M26,55 L44,73 L83,34 L91,42 L44,89 L18,63Z"/>
+          </vector>
+          EOF
+
+          cat > haihe-gecko-ci/app/src/main/res/drawable/tv_banner.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="320dp" android:height="180dp"
+              android:viewportWidth="320" android:viewportHeight="180">
+              <path android:fillColor="#00A650" android:pathData="M0,0 L320,0 L320,180 L0,180Z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M90,92 L132,134 L230,36 L246,52 L132,166 L74,108Z"/>
+          </vector>
+          EOF
+
+          cat > haihe-gecko-ci/app/src/main/java/cn/ictsoft/haihe/tvengine/MainActivity.java <<'EOF'
+          package cn.ictsoft.haihe.tvengine;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowManager;
+
+          import org.mozilla.geckoview.GeckoRuntime;
+          import org.mozilla.geckoview.GeckoSession;
+          import org.mozilla.geckoview.GeckoView;
+
+          public final class MainActivity extends Activity {
+              private static final long RETRY_DELAY_MS = 10000L;
+              private static GeckoRuntime runtime;
+              private final Handler handler = new Handler(Looper.getMainLooper());
+              private GeckoSession session;
+              private boolean destroyed;
+
+              private final Runnable retry = new Runnable() {
+                  @Override public void run() {
+                      if (!destroyed && session != null) session.loadUri(BuildConfig.START_URL);
+                  }
+              };
+
+              @Override protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  requestWindowFeature(Window.FEATURE_NO_TITLE);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                  hideSystemUi();
+
+                  GeckoView view = new GeckoView(this);
+                  view.setBackgroundColor(0xFF000000);
+                  setContentView(view);
+
+                  if (runtime == null) runtime = GeckoRuntime.create(this);
+                  session = new GeckoSession();
+                  session.setProgressDelegate(new GeckoSession.ProgressDelegate() {
+                      @Override public void onPageStop(GeckoSession currentSession, boolean success) {
+                          handler.removeCallbacks(retry);
+                          if (!success && !destroyed) handler.postDelayed(retry, RETRY_DELAY_MS);
+                      }
+                  });
+                  session.open(runtime);
+                  view.setSession(session);
+                  session.loadUri(BuildConfig.START_URL);
+              }
+
+              private void hideSystemUi() {
+                  getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_FULLSCREEN |
+                      View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                      View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                      View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                      View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                      View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+              }
+
+              @Override public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) hideSystemUi();
+              }
+
+              @Override public void onBackPressed() { }
+
+              @Override protected void onDestroy() {
+                  destroyed = true;
+                  handler.removeCallbacksAndMessages(null);
+                  if (session != null) {
+                      session.close();
+                      session = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Build four unsigned release APKs
+        working-directory: haihe-gecko-ci
+        run: gradle clean assembleRelease --stacktrace
+
+      - name: Verify Gecko is embedded and prepare artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          declare -A names=(
+            [sum]="海合汇总-GeckoView144-ARMv7-v4-unsigned.apk"
+            [fac1]="海合一分厂-GeckoView144-ARMv7-v4-unsigned.apk"
+            [fac2]="海合二分厂-GeckoView144-ARMv7-v4-unsigned.apk"
+            [fac3]="海合三分厂-GeckoView144-ARMv7-v4-unsigned.apk"
+          )
+          declare -A packages=(
+            [sum]="cn.ictsoft.haihe.sum001"
+            [fac1]="cn.ictsoft.haihe.fac001"
+            [fac2]="cn.ictsoft.haihe.fac002"
+            [fac3]="cn.ictsoft.haihe.fac003"
+          )
+          for flavor in sum fac1 fac2 fac3; do
+            src="haihe-gecko-ci/app/build/outputs/apk/${flavor}/release/app-${flavor}-release-unsigned.apk"
+            out="dist/${names[$flavor]}"
+            test -s "$src"
+            cp "$src" "$out"
+            "$AAPT" dump badging "$out" | tee "dist/${flavor}-badging.txt"
+            grep -F "package: name='${packages[$flavor]}'" "dist/${flavor}-badging.txt"
+            unzip -l "$out" | tee "dist/${flavor}-files.txt"
+            grep -F 'lib/armeabi-v7a/' "dist/${flavor}-files.txt"
+            grep -E 'lib/armeabi-v7a/.*(libxul|libmozglue|libnss3).*\.so' "dist/${flavor}-files.txt"
+          done
+          echo "$GECKO_VERSION" > dist/GECKOVIEW_VERSION.txt
+          sha256sum dist/*.apk > dist/UNSIGNED_SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haihe-geckoview144-armv7-unsigned-v4
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
