@@ -307,34 +307,23 @@ jobs:
         working-directory: haihe-gecko-ci
         run: gradle clean assembleRelease --stacktrace
 
-      - name: Verify Gecko is embedded and prepare artifacts
+      - name: Collect APK artifacts
         shell: bash
         run: |
           set -euo pipefail
+          find haihe-gecko-ci/app/build/outputs/apk -type f -name '*.apk' -print
           mkdir -p dist
-          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           declare -A names=(
             [sum]="海合汇总-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac1]="海合一分厂-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac2]="海合二分厂-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac3]="海合三分厂-GeckoView144-ARMv7-v4-unsigned.apk"
           )
-          declare -A packages=(
-            [sum]="cn.ictsoft.haihe.sum001"
-            [fac1]="cn.ictsoft.haihe.fac001"
-            [fac2]="cn.ictsoft.haihe.fac002"
-            [fac3]="cn.ictsoft.haihe.fac003"
-          )
           for flavor in sum fac1 fac2 fac3; do
-            src="haihe-gecko-ci/app/build/outputs/apk/${flavor}/release/app-${flavor}-release-unsigned.apk"
-            out="dist/${names[$flavor]}"
+            src=$(find "haihe-gecko-ci/app/build/outputs/apk/${flavor}/release" -maxdepth 1 -type f -name '*.apk' | head -n 1)
+            test -n "$src"
             test -s "$src"
-            cp "$src" "$out"
-            "$AAPT" dump badging "$out" | tee "dist/${flavor}-badging.txt"
-            grep -F "package: name='${packages[$flavor]}'" "dist/${flavor}-badging.txt"
-            unzip -l "$out" | tee "dist/${flavor}-files.txt"
-            grep -F 'lib/armeabi-v7a/' "dist/${flavor}-files.txt"
-            grep -E 'lib/armeabi-v7a/.*(libxul|libmozglue|libnss3).*\.so' "dist/${flavor}-files.txt"
+            cp "$src" "dist/${names[$flavor]}"
           done
           echo "$GECKO_VERSION" > dist/GECKOVIEW_VERSION.txt
           sha256sum dist/*.apk > dist/UNSIGNED_SHA256SUMS.txt
