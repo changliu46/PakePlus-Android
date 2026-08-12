@@ -105,7 +105,7 @@ jobs:
 
               flavorDimensions += 'site'
               productFlavors {
-                  sum {
+                  summary {
                       dimension 'site'
                       applicationId 'cn.ictsoft.haihe.sum001'
                       resValue 'string', 'app_name', '海合汇总'
@@ -314,12 +314,12 @@ jobs:
           find haihe-gecko-ci/app/build/outputs/apk -type f -name '*.apk' -print
           mkdir -p dist
           declare -A names=(
-            [sum]="海合汇总-GeckoView144-ARMv7-v4-unsigned.apk"
+            [summary]="海合汇总-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac1]="海合一分厂-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac2]="海合二分厂-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac3]="海合三分厂-GeckoView144-ARMv7-v4-unsigned.apk"
           )
-          for flavor in sum fac1 fac2 fac3; do
+          for flavor in summary fac1 fac2 fac3; do
             src=$(find "haihe-gecko-ci/app/build/outputs/apk/${flavor}/release" -maxdepth 1 -type f -name '*.apk' | head -n 1)
             test -n "$src"
             test -s "$src"
