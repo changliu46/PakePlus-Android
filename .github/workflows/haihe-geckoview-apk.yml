@@ -24,11 +24,11 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
-        run: yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+        run: yes | sdkmanager "platforms;android-36" "build-tools;35.0.0" >/dev/null
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.4'
+          gradle-version: '8.13'
 
       - name: Resolve latest GeckoView 144 ARMv7
         shell: bash
@@ -74,7 +74,7 @@ jobs:
 
           cat > haihe-gecko-ci/build.gradle <<'EOF'
           plugins {
-              id 'com.android.application' version '8.3.2' apply false
+              id 'com.android.application' version '8.11.1' apply false
           }
           EOF
 
@@ -94,7 +94,7 @@ jobs:
 
           android {
               namespace 'cn.ictsoft.haihe.tvengine'
-              compileSdk 34
+              compileSdk 36
 
               defaultConfig {
                   minSdk 21
@@ -312,7 +312,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           declare -A names=(
             [sum]="海合汇总-GeckoView144-ARMv7-v4-unsigned.apk"
             [fac1]="海合一分厂-GeckoView144-ARMv7-v4-unsigned.apk"
